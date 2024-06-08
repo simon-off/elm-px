@@ -1,0 +1,91 @@
+* {
+  margin: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui;
+  padding: 1rem;
+}
+
+h2 {
+  margin-bottom: 0.25rem;
+}
+
+section {
+  margin-bottom: 2rem;
+}
+
+.section-tasks {
+  .tasks {
+    padding: 0;
+    list-style: none;
+    border: 1px solid;
+  }
+
+  .task {
+    padding: 0.125rem 0.25rem;
+    cursor: pointer;
+    &.selected {
+      background-color: lightblue;
+    }
+  }
+}
+
+.section-settings {
+  label {
+    display: flex;
+    width: fit-content;
+    gap: 8px;
+  }
+}
+
+.section-calendar {
+  .weekdays {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    border: 1px solid;
+    padding: 8px;
+  }
+
+  .weekday {
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.25rem 0;
+      text-transform: uppercase;
+      font-family: consolas, monospace;
+      font-weight: 700;
+
+      h3 {
+        font-size: 1rem;
+      }
+
+      p {
+        opacity: 0.4;
+      }
+    }
+  }
+
+  .strokes {
+    border: 1px solid;
+  }
+
+  .stroke {
+    font-family: consolas, monospace;
+    font-size: 0.875rem;
+    padding: 0 4px;
+    opacity: 0.25;
+    user-select: none;
+
+    &:not(:first-of-type) {
+      border-top: 1px solid;
+    }
+
+    &.zero {
+      opacity: 0.75;
+    }
+  }
+}
