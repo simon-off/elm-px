@@ -1,26 +1,45 @@
 module Main exposing (main)
 
 import Browser
+import Dropdown
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onCheck, onClick)
+import Html.Events exposing (onCheck, onClick, onInput)
+import Utils exposing (doIf, ternary)
 
 
 
 -- UTILS
 
 
-formatTime : Int -> Int -> String
-formatTime hour minute =
+getTimeString : Int -> String
+getTimeString minute =
     let
-        timeString time =
-            if time < 10 then
-                "0" ++ String.fromInt time
+        hourString =
+            String.fromInt (minute // 60)
 
-            else
-                String.fromInt time
+        minuteString =
+            String.fromInt (remainderBy 60 minute)
+
+        padTimeString str =
+            ternary (String.length str == 1) ("0" ++ str) str
     in
-    timeString hour ++ ":" ++ timeString minute
+    padTimeString hourString ++ ":" ++ padTimeString minuteString
+
+
+isHour : String -> Bool
+isHour timeStr =
+    String.endsWith "00" timeStr
+
+
+getStrokes : Int -> List String
+getStrokes timeIncrement =
+    List.map
+        getTimeString
+        (List.filter
+            (\n -> remainderBy timeIncrement n == 0)
+            (List.range 0 (1440 - 1))
+        )
 
 
 
@@ -37,25 +56,45 @@ main =
 
 
 type alias Task =
-    { id : String
+    { id : Int
     , name : String
     , time : Int
     }
 
 
 type alias Settings =
-    { showWeekend : Bool }
-
-
-type alias Model =
-    { selectedTaskId : String
-    , tasks : List Task
-    , settings : Settings
+    { showWeekend : Bool
+    , timeIncrement : Int
     }
 
 
-weekdays : List String
-weekdays =
+type alias Entry =
+    { taskId : String
+    , start : Int
+    , end : Int
+    }
+
+
+type alias Model =
+    { selectedTaskId : Maybe Int
+    , tasks : List Task
+    , settings : Settings
+    , week :
+        { monday : List Entry
+        , tuesday : List Entry
+        , wednesday : List Entry
+        , thursday : List Entry
+        , friday : List Entry
+        , saturday : List Entry
+        , sunday : List Entry
+        }
+    , strokes : List String
+    , timeIncrementOpen : Bool
+    }
+
+
+days : List String
+days =
     [ "monday"
     , "tuesday"
     , "wednesday"
@@ -68,19 +107,48 @@ weekdays =
 
 tasks : List Task
 tasks =
-    [ { id = "task-1", name = "task 1", time = 0 }
-    , { id = "task-2", name = "task 2", time = 0 }
-    , { id = "task-3", name = "task 3", time = 0 }
+    [ { id = 1, name = "task 1", time = 0 }
+    , { id = 2, name = "task 2", time = 0 }
+    , { id = 3, name = "task 3", time = 0 }
+    , { id = 4, name = "task 3", time = 0 }
+    , { id = 5, name = "task 3", time = 0 }
+    , { id = 6, name = "task 3", time = 0 }
+    , { id = 7, name = "task 3", time = 0 }
+    , { id = 8, name = "task 3", time = 0 }
+    , { id = 9, name = "task 3", time = 0 }
+    , { id = 10, name = "task 3", time = 0 }
+    , { id = 11, name = "task 3", time = 0 }
+    , { id = 12, name = "task 3", time = 0 }
+    , { id = 13, name = "task 3", time = 0 }
+    , { id = 14, name = "task 3", time = 0 }
+    , { id = 15, name = "task 3", time = 0 }
     ]
+
+
+defaultTimeIncrement : Int
+defaultTimeIncrement =
+    30
 
 
 init : Model
 init =
-    { selectedTaskId = ""
+    { selectedTaskId = Nothing
     , tasks = tasks
     , settings =
         { showWeekend = True
+        , timeIncrement = defaultTimeIncrement
         }
+    , week =
+        { monday = []
+        , tuesday = []
+        , wednesday = []
+        , thursday = []
+        , friday = []
+        , saturday = []
+        , sunday = []
+        }
+    , strokes = getStrokes defaultTimeIncrement
+    , timeIncrementOpen = False
     }
 
 
@@ -89,82 +157,77 @@ init =
 
 
 type Action
-    = ChangeSelection
-    | ChangeSetting
+    = ChangeSelection Int
+    | ChangeShowWeekend Bool
+    | ChangeTimeIncrement String
+    | ToggleTimeIncrementDropdown
 
 
 type alias Msg =
-    { action : Action
-    , data : String
-    }
+    Action
+
+
+updateSettings : (Settings -> Settings) -> Model -> Model
+updateSettings transform model =
+    { model | settings = transform model.settings }
 
 
 update : Msg -> Model -> Model
 update msg model =
-    case msg.action of
-        ChangeSelection ->
-            if model.selectedTaskId == msg.data then
-                { model | selectedTaskId = "" }
+    case msg of
+        ChangeSelection data ->
+            ternary (model.selectedTaskId == Just data)
+                { model | selectedTaskId = Nothing }
+                { model | selectedTaskId = Just data }
 
-            else
-                { model | selectedTaskId = msg.data }
+        ChangeShowWeekend data ->
+            ternary data
+                (model |> updateSettings (\x -> { x | showWeekend = True }))
+                (model |> updateSettings (\x -> { x | showWeekend = False }))
 
-        ChangeSetting ->
+        ChangeTimeIncrement data ->
             let
-                settings =
-                    model.settings
-
-                newSettings condition =
-                    { settings | showWeekend = condition }
+                newModel =
+                    model |> updateSettings (\x -> { x | timeIncrement = Maybe.withDefault 10 (String.toInt data) })
             in
-            if msg.data == "on" then
-                { model | settings = newSettings True }
+            { newModel | strokes = getStrokes newModel.settings.timeIncrement }
 
-            else
-                { model | settings = newSettings False }
+        ToggleTimeIncrementDropdown ->
+            { model | timeIncrementOpen = not model.timeIncrementOpen }
 
 
 
 -- VIEW
 
 
-viewTask : Model -> Task -> Html Msg
-viewTask model task =
+viewTask : Model -> Int -> Task -> Html Msg
+viewTask model index task =
     li
         [ class "task"
-        , class
-            (if model.selectedTaskId == task.id then
-                "selected"
-
-             else
-                ""
-            )
-        , onClick { action = ChangeSelection, data = task.id }
+        , class (ternary (model.selectedTaskId == Just task.id) "selected" "")
+        , onClick (ChangeSelection task.id)
         ]
-        [ text task.name ]
+        [ p
+            [ class "index"
+            , attribute "style" ("--clr: oklch(70% 40% " ++ String.fromInt (index * 50) ++ ")")
+            ]
+            [ text (String.fromInt (index + 1)) ]
+        , p [] [ text task.name ]
+        , p [] [ text task.name ]
+        ]
 
 
-viewHour : Int -> List (Html Msg)
-viewHour hour =
-    List.map
-        (\minute ->
-            div
-                [ class "stroke"
-                , class
-                    (if minute == 0 then
-                        "zero"
-
-                     else
-                        ""
-                    )
-                ]
-                [ text (formatTime hour minute) ]
-        )
-        (List.map (\n -> n * 10) (List.range 0 5))
+viewStroke : String -> Html Msg
+viewStroke stroke =
+    div
+        [ class "stroke"
+        , class (ternary (isHour stroke) "zero" "")
+        ]
+        [ text stroke ]
 
 
-viewDay : String -> Html Msg
-viewDay day =
+viewDay : Model -> String -> Html Msg
+viewDay model day =
     div
         [ class "weekday" ]
         [ header
@@ -177,8 +240,53 @@ viewDay day =
                 [ text "25/4" ]
             ]
         , div
-            [ class "strokes" ]
-            (List.concat (List.map viewHour (List.range 0 23)))
+            [ class "strokes", attribute "day" day ]
+            (List.map
+                viewStroke
+                model.strokes
+            )
+        ]
+
+
+viewSettings : Model -> Html Msg
+viewSettings model =
+    let
+        isSelected value =
+            case String.toInt value of
+                Just number ->
+                    number == model.settings.timeIncrement
+
+                Nothing ->
+                    False
+
+        timeOptions =
+            [ "10", "15", "20", "30", "60" ]
+    in
+    section
+        [ class "section-settings" ]
+        [ h2 [] [ text "Settings" ]
+        , Html.form
+            []
+            [ label [ class "checkbox-weekend" ]
+                [ input
+                    [ type_ "checkbox"
+                    , checked model.settings.showWeekend
+                    , onCheck
+                        (\checked -> ChangeShowWeekend checked)
+                    ]
+                    []
+                , text "Show weekend"
+                ]
+            , label [ class "dropdown-time" ]
+                [ text "Time increment"
+                , Dropdown.view
+                    model.timeIncrementOpen
+                    (timeOptions |> List.map (\x -> { value = x, label = x }))
+                    (String.fromInt model.settings.timeIncrement)
+                    ChangeTimeIncrement
+                    ToggleTimeIncrementDropdown
+                ]
+            ]
         ]
 
 
@@ -186,11 +294,11 @@ view : Model -> Html Msg
 view model =
     let
         selectedText =
-            case List.head (List.filter (\task -> model.selectedTaskId == task.id) model.tasks) of
-                Just asdf ->
-                    asdf.name
+            case List.head (model.tasks |> List.filter (\task -> model.selectedTaskId == Just task.id)) of
+                Just task ->
+                    task.name
 
-                _ ->
+                Nothing ->
                     "None"
     in
     div
@@ -200,47 +308,24 @@ view model =
             [ h2 [] [ text "Tasks" ]
             , ul
                 [ class "tasks" ]
-                (List.map (viewTask model) model.tasks)
-            , p [] [ text ("Selected: " ++ selectedText) ]
-            ]
-        , section
-            [ class "section-settings" ]
-            [ h2 [] [ text "Settings" ]
-            , Html.form
-                []
-                [ label []
-                    [ input
-                        [ type_ "checkbox"
-                        , checked model.settings.showWeekend
-                        , onCheck
-                            (\checked ->
-                                { action = ChangeSetting
-                                , data =
-                                    if checked then
-                                        "on"
-
-                                    else
-                                        "off"
-                                }
-                            )
+                ([ [ li [ class "task header" ]
+                        [ p []
+                            [ text "#" ]
+                        , p [] [ text "Name" ]
+                        , p [] [ text "Other" ]
                         ]
-                        []
-                    , text "Show weekend"
-                    ]
-                ]
+                   ]
+                 , model.tasks |> List.indexedMap (viewTask model)
+                 ]
+                    |> List.concat
+                )
             ]
+        , viewSettings model
         , section
             [ class "section-calendar" ]
-            [ h2 [] [ text "Week 25" ]
+            [ h2 [] [ text "Calendar" ]
             , div
-                [ class "weekdays" ]
-                (List.map viewDay
-                    (if model.settings.showWeekend then
-                        weekdays
-
-                     else
-                        List.take 5 weekdays
-                    )
-                )
+                [ class "week" ]
+                (List.map (viewDay model) (days |> doIf (List.take 5) (not model.settings.showWeekend)))
             ]
         ]

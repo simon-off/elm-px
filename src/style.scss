@@ -5,6 +5,7 @@
 
 body {
   font-family: system-ui;
+  font-family: consolas, monospace;
   padding: 1rem;
 }
 
@@ -18,34 +19,114 @@ section {
 
 .section-tasks {
   .tasks {
-    padding: 0;
+    display: grid;
+    grid-template-columns: auto auto auto 1fr;
+    padding: 8px;
     list-style: none;
     border: 1px solid;
+    border-radius: 4px;
   }
 
   .task {
-    padding: 0.125rem 0.25rem;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
     cursor: pointer;
+    padding: 1px;
+    border-radius: 3px;
+
     &.selected {
       background-color: lightblue;
+    }
+
+    p {
+      padding: 0.125rem 0.5rem;
+      border-right: 1px solid color-mix(in srgb, black 10%, white);
+
+      &.index {
+        color: white;
+        font-weight: bold;
+        background-color: var(--clr);
+        text-align: center;
+        border-radius: 2px;
+        border-right: none;
+      }
     }
   }
 }
 
 .section-settings {
-  label {
+  form {
+    display: grid;
+    gap: 0.5rem;
+    border: 1px solid;
+    padding: 8px;
+    border-radius: 4px;
+  }
+
+  .checkbox-weekend {
     display: flex;
     width: fit-content;
     gap: 8px;
   }
 }
 
+.dropdown {
+  position: relative;
+
+  &:has(.open) .value {
+    border-radius: 3px 3px 0 0;
+  }
+
+  .value {
+    border: 1px solid;
+    padding: 4px 8px;
+    display: flex;
+    justify-content: space-between;
+    border-radius: 3px;
+
+    &:after {
+      content: '⬇️';
+    }
+  }
+
+  .options {
+    display: none;
+    z-index: 1;
+    position: absolute;
+    left: 0;
+    right: 0;
+    border: 1px solid;
+    border-top: none;
+    border-radius: 0 0 3px 3px;
+    overflow: hidden;
+
+    &.open {
+      display: block;
+    }
+  }
+
+  .option {
+    padding: 4px 8px;
+    background-color: white;
+
+    &:hover {
+      background-color: color-mix(in srgb, lightblue 40%, white);
+    }
+
+    &.selected {
+      background-color: lightblue;
+    }
+  }
+}
+
 .section-calendar {
-  .weekdays {
+  .week {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 8px;
     border: 1px solid;
+    border-radius: 4px;
     padding: 8px;
   }
 
@@ -71,6 +152,7 @@ section {
 
   .strokes {
     border: 1px solid;
+    border-radius: 3px;
   }
 
   .stroke {
