@@ -68,10 +68,9 @@ type alias Settings =
     }
 
 
-type alias Entry =
-    { taskId : String
-    , start : Int
-    , end : Int
+type alias Day =
+    { name : String
+    , taskIdSlots : List (Maybe Int)
     }
 
 
@@ -79,30 +78,10 @@ type alias Model =
     { selectedTaskId : Maybe Int
     , tasks : List Task
     , settings : Settings
-    , week :
-        { monday : List Entry
-        , tuesday : List Entry
-        , wednesday : List Entry
-        , thursday : List Entry
-        , friday : List Entry
-        , saturday : List Entry
-        , sunday : List Entry
-        }
+    , week : List Day
     , strokes : List String
     , timeIncrementOpen : Bool
     }
-
-
-days : List String
-days =
-    [ "monday"
-    , "tuesday"
-    , "wednesday"
-    , "thursday"
-    , "friday"
-    , "saturday"
-    , "sunday"
-    ]
 
 
 tasks : List Task
@@ -110,24 +89,19 @@ tasks =
     [ { id = 1, name = "task 1", time = 0 }
     , { id = 2, name = "task 2", time = 0 }
     , { id = 3, name = "task 3", time = 0 }
-    , { id = 4, name = "task 3", time = 0 }
-    , { id = 5, name = "task 3", time = 0 }
-    , { id = 6, name = "task 3", time = 0 }
-    , { id = 7, name = "task 3", time = 0 }
-    , { id = 8, name = "task 3", time = 0 }
-    , { id = 9, name = "task 3", time = 0 }
-    , { id = 10, name = "task 3", time = 0 }
-    , { id = 11, name = "task 3", time = 0 }
-    , { id = 12, name = "task 3", time = 0 }
-    , { id = 13, name = "task 3", time = 0 }
-    , { id = 14, name = "task 3", time = 0 }
-    , { id = 15, name = "task 3", time = 0 }
     ]
 
 
 defaultTimeIncrement : Int
 defaultTimeIncrement =
     30
+
+
+defaultDay : String -> Day
+defaultDay name =
+    { name = name
+    , taskIdSlots = List.repeat 288 Nothing
+    }
 
 
 init : Model
@@ -139,14 +113,14 @@ init =
         , timeIncrement = defaultTimeIncrement
         }
     , week =
-        { monday = []
-        , tuesday = []
-        , wednesday = []
-        , thursday = []
-        , friday = []
-        , saturday = []
-        , sunday = []
-        }
+        [ defaultDay "monday"
+        , defaultDay "tuesday"
+        , defaultDay "wednesday"
+        , defaultDay "thursday"
+        , defaultDay "friday"
+        , defaultDay "saturday"
+        , defaultDay "sunday"
+        ]
     , strokes = getStrokes defaultTimeIncrement
     , timeIncrementOpen = False
     }
@@ -188,7 +162,9 @@ update msg model =
         ChangeTimeIncrement data ->
             let
                 newModel =
-                    model |> updateSettings (\x -> { x | timeIncrement = Maybe.withDefault 10 (String.toInt data) })
+                    model
+                        |> updateSettings
+                            (\x -> { x | timeIncrement = Maybe.withDefault 10 (String.toInt data) })
             in
             { newModel | strokes = getStrokes newModel.settings.timeIncrement }
 
@@ -223,10 +199,10 @@ viewStroke stroke =
         [ class "stroke"
         , class (ternary (isHour stroke) "zero" "")
         ]
-        [ text stroke ]
+        [ span [ class "time" ] [ text stroke ] ]
 
 
-viewDay : Model -> String -> Html Msg
+viewDay : Model -> Day -> Html Msg
 viewDay model day =
     div
         [ class "weekday" ]
@@ -234,13 +210,13 @@ viewDay model day =
             []
             [ h3
                 [ class "name" ]
-                [ text day ]
+                [ text day.name ]
             , p
                 [ class "date" ]
                 [ text "25/4" ]
             ]
         , div
-            [ class "strokes", attribute "day" day ]
+            [ class "strokes", attribute "day" day.name ]
             (List.map
                 viewStroke
                 model.strokes
@@ -251,14 +227,6 @@ viewDay model day =
 viewSettings : Model -> Html Msg
 viewSettings model =
     let
-        isSelected value =
-            case String.toInt value of
-                Just number ->
-                    number == model.settings.timeIncrement
-
-                Nothing ->
-                    False
-
         timeOptions =
             [ "10", "15", "20", "30", "60" ]
     in
@@ -292,15 +260,6 @@ viewSettings model =
 
 view : Model -> Html Msg
 view model =
-    let
-        selectedText =
-            case List.head (model.tasks |> List.filter (\task -> model.selectedTaskId == Just task.id)) of
-                Just task ->
-                    task.name
-
-                Nothing ->
-                    "None"
-    in
     div
         []
         [ section
@@ -326,6 +285,6 @@ view model =
             [ h2 [] [ text "Calendar" ]
             , div
                 [ class "week" ]
-                (List.map (viewDay model) (days |> doIf (List.take 5) (not model.settings.showWeekend)))
+                (List.map (viewDay model) (model.week |> doIf (List.take 5) (not model.settings.showWeekend)))
             ]
         ]
