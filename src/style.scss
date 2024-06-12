@@ -130,7 +130,7 @@ section {
     padding: 8px;
   }
 
-  .weekday {
+  .day {
     header {
       display: flex;
       justify-content: space-between;
@@ -156,9 +156,9 @@ section {
   }
 
   .stroke {
+    display: flex;
     font-family: consolas, monospace;
     font-size: 0.875rem;
-    padding: 0 4px;
     opacity: 0.25;
     user-select: none;
 
@@ -168,6 +168,15 @@ section {
 
     &.zero {
       opacity: 0.75;
+    }
+
+    .time {
+      padding-inline: 4px;
+    }
+
+    .task {
+      background-color: lightblue;
+      width: 100%;
     }
   }
 }

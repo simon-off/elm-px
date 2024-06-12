@@ -1,10 +1,13 @@
 module Main exposing (main)
 
+import Array exposing (Array)
 import Browser
+import Dict exposing (Dict)
 import Dropdown
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onCheck, onClick, onInput)
+import Html.Events exposing (onCheck, onClick, onMouseDown, onMouseOver, onMouseUp)
+import Maybe exposing (withDefault)
 import Utils exposing (doIf, ternary)
 
 
@@ -51,10 +54,6 @@ main =
     Browser.sandbox { init = init, update = update, view = view }
 
 
-
--- MODEL
-
-
 type alias Task =
     { id : Int
     , name : String
@@ -69,18 +68,17 @@ type alias Settings =
 
 
 type alias Day =
-    { name : String
-    , taskIdSlots : List (Maybe Int)
-    }
+    Array (Maybe Int)
 
 
 type alias Model =
     { selectedTaskId : Maybe Int
     , tasks : List Task
     , settings : Settings
-    , week : List Day
+    , week : Array Day
     , strokes : List String
     , timeIncrementOpen : Bool
+    , isMouseDown : Bool
     }
 
 
@@ -97,11 +95,9 @@ defaultTimeIncrement =
     30
 
 
-defaultDay : String -> Day
-defaultDay name =
-    { name = name
-    , taskIdSlots = List.repeat 288 Nothing
-    }
+emptyDay : Day
+emptyDay =
+    Array.initialize 240 (\_ -> Nothing)
 
 
 init : Model
@@ -112,17 +108,10 @@ init =
         { showWeekend = True
         , timeIncrement = defaultTimeIncrement
         }
-    , week =
-        [ defaultDay "monday"
-        , defaultDay "tuesday"
-        , defaultDay "wednesday"
-        , defaultDay "thursday"
-        , defaultDay "friday"
-        , defaultDay "saturday"
-        , defaultDay "sunday"
-        ]
+    , week = Array.initialize 7 (\_ -> emptyDay)
     , strokes = getStrokes defaultTimeIncrement
     , timeIncrementOpen = False
+    , isMouseDown = False
     }
 
 
@@ -130,15 +119,19 @@ init =
 -- UPDATE
 
 
-type Action
+type Msg
     = ChangeSelection Int
     | ChangeShowWeekend Bool
     | ChangeTimeIncrement String
     | ToggleTimeIncrementDropdown
-
-
-type alias Msg =
-    Action
+    | SetMouseDown Bool
+    | Default
+    | FillTimeSlot
+        { slotIndex : Int
+        , slot : Maybe Int
+        , dayIndex : Int
+        , day : Day
+        }
 
 
 updateSettings : (Settings -> Settings) -> Model -> Model
@@ -149,6 +142,12 @@ updateSettings transform model =
 update : Msg -> Model -> Model
 update msg model =
     case msg of
+        Default ->
+            model
+
+        SetMouseDown down ->
+            { model | isMouseDown = down }
+
         ChangeSelection data ->
             ternary (model.selectedTaskId == Just data)
                 { model | selectedTaskId = Nothing }
@@ -171,6 +170,16 @@ update msg model =
         ToggleTimeIncrementDropdown ->
             { model | timeIncrementOpen = not model.timeIncrementOpen }
 
+        FillTimeSlot conf ->
+            let
+                newDay =
+                    Array.set conf.slotIndex model.selectedTaskId conf.day
+
+                newWeek =
+                    Array.set conf.dayIndex newDay model.week
+            in
+            ternary model.isMouseDown { model | week = newWeek } model
+
 
 
 -- VIEW
@@ -185,7 +194,7 @@ viewTask model index task =
         ]
         [ p
             [ class "index"
-            , attribute "style" ("--clr: oklch(70% 40% " ++ String.fromInt (index * 50) ++ ")")
+            , attribute "style" ("--clr: oklch(70% 40% " ++ String.fromInt (index * 50 + 180) ++ ")")
             ]
             [ text (String.fromInt (index + 1)) ]
         , p [] [ text task.name ]
@@ -193,33 +202,82 @@ viewTask model index task =
         ]
 
 
-viewStroke : String -> Html Msg
-viewStroke stroke =
+viewSlot :
+    { model : Model
+    , slotIndex : Int
+    , slot : Maybe Int
+    , dayIndex : Int
+    , day : Day
+    }
+    -> Html Msg
+viewSlot conf =
+    let
+        minute =
+            conf.slotIndex * 6
+
+        taskName =
+            conf.model.tasks
+                |> List.filter (\task -> task.id == Maybe.withDefault -1 conf.slot)
+                |> List.head
+                |> (\o ->
+                        case o of
+                            Just task ->
+                                task.name
+
+                            Nothing ->
+                                ""
+                   )
+    in
     div
         [ class "stroke"
-        , class (ternary (isHour stroke) "zero" "")
+        , class (ternary (isHour (getTimeString minute)) "zero" "")
+        , onMouseOver
+            (FillTimeSlot
+                { slotIndex = conf.slotIndex
+                , slot = conf.slot
+                , dayIndex = conf.dayIndex
+                , day = conf.day
+                }
+            )
         ]
-        [ span [ class "time" ] [ text stroke ] ]
+        [ div [ class "time" ] [ text (getTimeString minute) ]
+        , div [ class "task" ]
+            [ text taskName ]
+        ]
 
 
-viewDay : Model -> Day -> Html Msg
-viewDay model day =
+viewDay : Model -> Int -> Day -> Html Msg
+viewDay model dayIndex day =
+    let
+        dayNames =
+            Array.fromList
+                [ "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday" ]
+    in
     div
-        [ class "weekday" ]
+        [ class "day" ]
         [ header
             []
             [ h3
                 [ class "name" ]
-                [ text day.name ]
+                [ text (Maybe.withDefault "" (Array.get dayIndex dayNames)) ]
             , p
                 [ class "date" ]
                 [ text "25/4" ]
             ]
         , div
-            [ class "strokes", attribute "day" day.name ]
-            (List.map
-                viewStroke
-                model.strokes
+            [ class "strokes" ]
+            (day
+                |> Array.indexedMap
+                    (\index slot ->
+                        viewSlot
+                            { model = model
+                            , slotIndex = index
+                            , slot = slot
+                            , dayIndex = dayIndex
+                            , day = day
+                            }
+                    )
+                |> Array.toList
             )
         ]
 
@@ -260,8 +318,10 @@ viewSettings model =
 
 view : Model -> Html Msg
 view model =
-    div
-        []
+    main_
+        [ onMouseDown (SetMouseDown True)
+        , onMouseUp (SetMouseDown False)
+        ]
         [ section
             [ class "section-tasks" ]
             [ h2 [] [ text "Tasks" ]
@@ -285,6 +345,10 @@ view model =
             [ h2 [] [ text "Calendar" ]
             , div
                 [ class "week" ]
-                (List.map (viewDay model) (model.week |> doIf (List.take 5) (not model.settings.showWeekend)))
+                (model.week
+                    |> doIf (Array.slice 0 5) (not model.settings.showWeekend)
+                    |> Array.indexedMap (viewDay model)
+                    |> Array.toList
+                )
             ]
         ]
