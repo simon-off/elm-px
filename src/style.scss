@@ -74,11 +74,11 @@ section {
 .dropdown {
   position: relative;
 
-  &:has(.open) .value {
+  &:has(.open) .current {
     border-radius: 3px 3px 0 0;
   }
 
-  .value {
+  .current {
     border: 1px solid;
     padding: 4px 8px;
     display: flex;
@@ -175,7 +175,7 @@ section {
     }
 
     .task {
-      background-color: lightblue;
+      background-color: var(--clr);
       width: 100%;
     }
   }

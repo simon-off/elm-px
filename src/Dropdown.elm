@@ -1,56 +1,84 @@
-module Dropdown exposing (view)
+module Dropdown exposing (DropdownModel, view)
 
 import Browser.Events exposing (onKeyDown, onKeyPress)
 import Html exposing (..)
 import Html.Attributes exposing (class, tabindex)
-import Html.Events exposing (onClick)
-import Json.Decode as Decode
+import Html.Events exposing (onClick, stopPropagationOn)
+import Json.Decode exposing (..)
+import List exposing (drop)
 import Utils exposing (ternary)
 
 
-type alias Option =
+type alias Option tValue =
     { label : String
-    , value : String
+    , value : tValue
     }
 
 
-keyDecoder : Decode.Decoder String
-keyDecoder =
-    Decode.field "key" Decode.string
+type alias DropdownModel tValue =
+    { value : tValue
+    , isOpen : Bool
+    , options : List (Option tValue)
+    }
 
 
-findOptionByValue : List Option -> String -> Option
-findOptionByValue options value =
-    Maybe.withDefault
-        { value = "", label = "" }
-        (options
-            |> List.filter (\option -> option.value == value)
-            |> List.head
-        )
+findOptionByValue : DropdownModel tValue -> Maybe (Option tValue)
+findOptionByValue dropdown =
+    dropdown.options
+        |> List.filter (\option -> option.value == dropdown.value)
+        |> List.head
 
 
-viewOption : (String -> msg) -> String -> Option -> Html msg
-viewOption msg value option =
+onClick2 : msg -> Attribute msg
+onClick2 msg =
+    stopPropagationOn "click" (Json.Decode.map alwaysPreventDefault (Json.Decode.succeed msg))
+
+
+alwaysPreventDefault : msg -> ( msg, Bool )
+alwaysPreventDefault msg =
+    ( msg, True )
+
+
+viewOption : DropdownModel tValue -> (DropdownModel tValue -> msg) -> Option tValue -> Html msg
+viewOption dropdown msg option =
     div
-        [ onClick (msg option.value)
+        [ onClick2
+            (msg
+                { dropdown
+                    | value = option.value
+                    , isOpen = not dropdown.isOpen
+                }
+            )
         , class "option"
-        , class (ternary (value == option.value) "selected" "")
+        , class (ternary (dropdown.value == option.value) "selected" "")
         ]
         [ text option.label ]
 
 
-view : Bool -> List Option -> String -> (String -> msg) -> msg -> Html msg
-view open options value selectMsg toggleMsg =
-    div [ onClick toggleMsg, class "dropdown", tabindex 0 ]
+view : DropdownModel tValue -> (DropdownModel tValue -> msg) -> Html msg
+view dropdown msg =
+    div
+        [ onClick (msg { dropdown | isOpen = not dropdown.isOpen })
+        , class "dropdown"
+        , tabindex 0
+        ]
         [ div
-            [ class "value" ]
-            [ text (findOptionByValue options value).label ]
+            [ class "current" ]
+            [ text
+                (case findOptionByValue dropdown of
+                    Just option ->
+                        option.label
+
+                    Nothing ->
+                        ""
+                )
+            ]
         , div
             [ class "options"
-            , class (ternary open "open" "closed")
+            , class (ternary dropdown.isOpen "open" "closed")
             ]
             (List.map
-                (viewOption selectMsg value)
-                options
+                (viewOption dropdown msg)
+                dropdown.options
             )
         ]

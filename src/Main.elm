@@ -1,4 +1,4 @@
-module Main exposing (main)
+module Main exposing (Msg(..), main)
 
 import Array exposing (Array)
 import Browser
@@ -51,11 +51,20 @@ getStrokes timeIncrement =
 
 main : Program () Model Msg
 main =
-    Browser.sandbox { init = init, update = update, view = view }
+    Browser.sandbox
+        { init = init
+        , update = update
+        , view = view
+        }
+
+
+
+-- MODEL
 
 
 type alias Task =
     { id : Int
+    , color : String
     , name : String
     , time : Int
     }
@@ -75,19 +84,34 @@ type alias Model =
     { selectedTaskId : Maybe Int
     , tasks : List Task
     , settings : Settings
-    , week : Array Day
+    , slots : Array (Maybe Int) -- 24/7 in 6 minute increments
     , strokes : List String
     , timeIncrementOpen : Bool
     , isMouseDown : Bool
+    , dropdownTimeIncrement : Dropdown.DropdownModel Int
+    }
+
+
+taskEmpty : Task
+taskEmpty =
+    { id = -1
+    , color = "transparent"
+    , name = ""
+    , time = 0
     }
 
 
 tasks : List Task
 tasks =
-    [ { id = 1, name = "task 1", time = 0 }
-    , { id = 2, name = "task 2", time = 0 }
-    , { id = 3, name = "task 3", time = 0 }
-    ]
+    List.map
+        (\n ->
+            { id = n
+            , color = "oklch(70% 40% " ++ String.fromInt (n * 50 + 180) ++ ")"
+            , name = "Task " ++ String.fromInt n
+            , time = 0
+            }
+        )
+        [ 1, 2, 3 ]
 
 
 defaultTimeIncrement : Int
@@ -108,10 +132,20 @@ init =
         { showWeekend = True
         , timeIncrement = defaultTimeIncrement
         }
-    , week = Array.initialize 7 (\_ -> emptyDay)
+    , slots = Array.initialize (10 * 24 * 7) (\_ -> Nothing)
     , strokes = getStrokes defaultTimeIncrement
     , timeIncrementOpen = False
     , isMouseDown = False
+    , dropdownTimeIncrement =
+        { isOpen = False
+        , value = 6
+        , options =
+            [ { value = 10, label = "10" }
+            , { value = 15, label = "15" }
+            , { value = 30, label = "30" }
+            , { value = 60, label = "60" }
+            ]
+        }
     }
 
 
@@ -123,7 +157,7 @@ type Msg
     = ChangeSelection Int
     | ChangeShowWeekend Bool
     | ChangeTimeIncrement String
-    | ToggleTimeIncrementDropdown
+    | UpdateDropdownTimeIncrement (Dropdown.DropdownModel Int)
     | SetMouseDown Bool
     | Default
     | FillTimeSlot
@@ -167,18 +201,15 @@ update msg model =
             in
             { newModel | strokes = getStrokes newModel.settings.timeIncrement }
 
-        ToggleTimeIncrementDropdown ->
-            { model | timeIncrementOpen = not model.timeIncrementOpen }
-
         FillTimeSlot conf ->
             let
                 newDay =
                     Array.set conf.slotIndex model.selectedTaskId conf.day
-
-                newWeek =
-                    Array.set conf.dayIndex newDay model.week
             in
-            ternary model.isMouseDown { model | week = newWeek } model
+            model
+
+        UpdateDropdownTimeIncrement dropdown ->
+            { model | dropdownTimeIncrement = dropdown }
 
 
 
@@ -194,7 +225,7 @@ viewTask model index task =
         ]
         [ p
             [ class "index"
-            , attribute "style" ("--clr: oklch(70% 40% " ++ String.fromInt (index * 50 + 180) ++ ")")
+            , attribute "style" ("--clr: " ++ task.color)
             ]
             [ text (String.fromInt (index + 1)) ]
         , p [] [ text task.name ]
@@ -215,34 +246,31 @@ viewSlot conf =
         minute =
             conf.slotIndex * 6
 
-        taskName =
+        task =
             conf.model.tasks
-                |> List.filter (\task -> task.id == Maybe.withDefault -1 conf.slot)
+                |> List.filter (\t -> t.id == Maybe.withDefault -1 conf.slot)
                 |> List.head
-                |> (\o ->
-                        case o of
-                            Just task ->
-                                task.name
-
-                            Nothing ->
-                                ""
-                   )
+                |> Maybe.withDefault taskEmpty
     in
     div
         [ class "stroke"
         , class (ternary (isHour (getTimeString minute)) "zero" "")
+        , onMouseDown (SetMouseDown True)
         , onMouseOver
-            (FillTimeSlot
-                { slotIndex = conf.slotIndex
-                , slot = conf.slot
-                , dayIndex = conf.dayIndex
-                , day = conf.day
-                }
+            (ternary conf.model.isMouseDown
+                (FillTimeSlot
+                    { slotIndex = conf.slotIndex
+                    , slot = conf.slot
+                    , dayIndex = conf.dayIndex
+                    , day = conf.day
+                    }
+                )
+                Default
             )
         ]
         [ div [ class "time" ] [ text (getTimeString minute) ]
-        , div [ class "task" ]
-            [ text taskName ]
+        , div [ class "task", attribute "style" ("--clr: " ++ task.color) ]
+            [ text task.name ]
         ]
 
 
@@ -305,12 +333,7 @@ viewSettings model =
                 ]
             , label [ class "dropdown-time" ]
                 [ text "Time increment"
-                , Dropdown.view
-                    model.timeIncrementOpen
-                    (timeOptions |> List.map (\x -> { value = x, label = x }))
-                    (String.fromInt model.settings.timeIncrement)
-                    ChangeTimeIncrement
-                    ToggleTimeIncrementDropdown
+                , Dropdown.view model.dropdownTimeIncrement UpdateDropdownTimeIncrement
                 ]
             ]
         ]
@@ -345,7 +368,8 @@ view model =
             [ h2 [] [ text "Calendar" ]
             , div
                 [ class "week" ]
-                (model.week
+                (Array.initialize 7 identity
+                    |> Array.map (\i -> Array.slice (i * 240) (i * 240 + 240) model.slots)
                     |> doIf (Array.slice 0 5) (not model.settings.showWeekend)
                     |> Array.indexedMap (viewDay model)
                     |> Array.toList
