@@ -84,7 +84,7 @@ type alias Model =
     { selectedTaskId : Maybe Int
     , tasks : List Task
     , settings : Settings
-    , slots : Array (Maybe Int) -- 24/7 in 6 minute increments
+    , week : Array Day
     , strokes : List String
     , timeIncrementOpen : Bool
     , isMouseDown : Bool
@@ -111,7 +111,7 @@ tasks =
             , time = 0
             }
         )
-        [ 1, 2, 3 ]
+        [ 1, 2, 3, 4, 5, 6, 7 ]
 
 
 defaultTimeIncrement : Int
@@ -132,7 +132,7 @@ init =
         { showWeekend = True
         , timeIncrement = defaultTimeIncrement
         }
-    , slots = Array.initialize (10 * 24 * 7) (\_ -> Nothing)
+    , week = Array.initialize 7 (\_ -> emptyDay)
     , strokes = getStrokes defaultTimeIncrement
     , timeIncrementOpen = False
     , isMouseDown = False
@@ -205,8 +205,11 @@ update msg model =
             let
                 newDay =
                     Array.set conf.slotIndex model.selectedTaskId conf.day
+
+                newWeek =
+                    Array.set conf.dayIndex newDay model.week
             in
-            model
+            { model | week = newWeek }
 
         UpdateDropdownTimeIncrement dropdown ->
             { model | dropdownTimeIncrement = dropdown }
@@ -255,7 +258,6 @@ viewSlot conf =
     div
         [ class "stroke"
         , class (ternary (isHour (getTimeString minute)) "zero" "")
-        , onMouseDown (SetMouseDown True)
         , onMouseOver
             (ternary conf.model.isMouseDown
                 (FillTimeSlot
@@ -295,8 +297,10 @@ viewDay model dayIndex day =
         , div
             [ class "strokes" ]
             (day
-                |> Array.indexedMap
-                    (\index slot ->
+                |> Array.indexedMap (\i x -> ( i, x ))
+                |> Array.slice 120 150
+                |> Array.map
+                    (\( index, slot ) ->
                         viewSlot
                             { model = model
                             , slotIndex = index
@@ -368,8 +372,7 @@ view model =
             [ h2 [] [ text "Calendar" ]
             , div
                 [ class "week" ]
-                (Array.initialize 7 identity
-                    |> Array.map (\i -> Array.slice (i * 240) (i * 240 + 240) model.slots)
+                (model.week
                     |> doIf (Array.slice 0 5) (not model.settings.showWeekend)
                     |> Array.indexedMap (viewDay model)
                     |> Array.toList
