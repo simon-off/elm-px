@@ -6,7 +6,8 @@ import Dict exposing (Dict)
 import Dropdown
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onCheck, onClick, onMouseDown, onMouseOver, onMouseUp)
+import Html.Events exposing (on, onCheck, onClick, onMouseDown, onMouseOver, onMouseUp)
+import Json.Decode as Decode exposing (Decoder, field, int)
 import Maybe exposing (withDefault)
 import Utils exposing (doIf, ternary)
 
@@ -28,11 +29,6 @@ getTimeString minute =
             ternary (String.length str == 1) ("0" ++ str) str
     in
     padTimeString hourString ++ ":" ++ padTimeString minuteString
-
-
-isHour : String -> Bool
-isHour timeStr =
-    String.endsWith "00" timeStr
 
 
 getStrokes : Int -> List String
@@ -62,90 +58,102 @@ main =
 -- MODEL
 
 
-type alias Task =
-    { id : Int
-    , color : String
-    , name : String
-    , time : Int
-    }
-
-
 type alias Settings =
     { showWeekend : Bool
     , timeIncrement : Int
     }
 
 
+type alias TaskId =
+    Int
+
+
+type alias Task =
+    { id : TaskId
+    , color : String
+    , name : String
+    }
+
+
 type alias Day =
-    Array (Maybe Int)
+    Array (Maybe TaskId)
+
+
+type alias Week =
+    Array Day
 
 
 type alias Model =
-    { selectedTaskId : Maybe Int
+    { selectedTask : Maybe Task
     , tasks : List Task
     , settings : Settings
-    , week : Array Day
-    , strokes : List String
-    , timeIncrementOpen : Bool
-    , isMouseDown : Bool
-    , dropdownTimeIncrement : Dropdown.DropdownModel Int
+    , week : Week
+    , timeIncrementDropdown : Dropdown.DropdownModel Int
+    , penis : Int
     }
 
 
-taskEmpty : Task
-taskEmpty =
-    { id = -1
+emptyTask : Task
+emptyTask =
+    { id = 0
     , color = "transparent"
     , name = ""
-    , time = 0
     }
 
 
-tasks : List Task
-tasks =
+defaultTasks : List Task
+defaultTasks =
     List.map
         (\n ->
             { id = n
             , color = "oklch(70% 40% " ++ String.fromInt (n * 50 + 180) ++ ")"
             , name = "Task " ++ String.fromInt n
-            , time = 0
             }
         )
         [ 1, 2, 3, 4, 5, 6, 7 ]
 
 
-defaultTimeIncrement : Int
-defaultTimeIncrement =
-    30
-
-
 emptyDay : Day
 emptyDay =
+    -- Divide the day into 6 minute segments
     Array.initialize 240 (\_ -> Nothing)
+
+
+defaultTimeIncrement : Int
+defaultTimeIncrement =
+    6
 
 
 init : Model
 init =
-    { selectedTaskId = Nothing
-    , tasks = tasks
+    { selectedTask = Nothing
+    , tasks = defaultTasks
     , settings =
         { showWeekend = True
         , timeIncrement = defaultTimeIncrement
         }
     , week = Array.initialize 7 (\_ -> emptyDay)
-    , strokes = getStrokes defaultTimeIncrement
-    , timeIncrementOpen = False
-    , isMouseDown = False
-    , dropdownTimeIncrement =
+    , timeIncrementDropdown =
         { isOpen = False
         , value = 6
         , options =
-            [ { value = 10, label = "10" }
+            [ { value = 6, label = "6" }
+            , { value = 10, label = "10" }
             , { value = 15, label = "15" }
             , { value = 30, label = "30" }
             , { value = 60, label = "60" }
             ]
         }
+    , penis = 0
+    }
+
+
+type alias TimeSlotMessage =
+    { isMouseDown : Bool
+    , slotIndex : Int
+    , slot : Maybe Int
+    , dayIndex : Int
+    , day : Day
     }
 
 
@@ -154,18 +162,10 @@ init =
 
 
 type Msg
-    = ChangeSelection Int
-    | ChangeShowWeekend Bool
-    | ChangeTimeIncrement String
+    = UpdateSelectedTask Task
+    | UpdateShowWeekend Bool
     | UpdateDropdownTimeIncrement (Dropdown.DropdownModel Int)
-    | SetMouseDown Bool
-    | Default
-    | FillTimeSlot
-        { slotIndex : Int
-        , slot : Maybe Int
-        , dayIndex : Int
-        , day : Day
-        }
+    | FillTimeSlot TimeSlotMessage
 
 
 updateSettings : (Settings -> Settings) -> Model -> Model
@@ -176,43 +176,47 @@ updateSettings transform model =
 update : Msg -> Model -> Model
 update msg model =
     case msg of
-        Default ->
-            model
+        UpdateSelectedTask data ->
+            ternary (model.selectedTask == Just data)
+                { model | selectedTask = Nothing }
+                { model | selectedTask = Just data }
 
-        SetMouseDown down ->
-            { model | isMouseDown = down }
-
-        ChangeSelection data ->
-            ternary (model.selectedTaskId == Just data)
-                { model | selectedTaskId = Nothing }
-                { model | selectedTaskId = Just data }
-
-        ChangeShowWeekend data ->
+        UpdateShowWeekend data ->
             ternary data
                 (model |> updateSettings (\x -> { x | showWeekend = True }))
                 (model |> updateSettings (\x -> { x | showWeekend = False }))
 
-        ChangeTimeIncrement data ->
-            let
-                newModel =
-                    model
-                        |> updateSettings
-                            (\x -> { x | timeIncrement = Maybe.withDefault 10 (String.toInt data) })
-            in
-            { newModel | strokes = getStrokes newModel.settings.timeIncrement }
-
+        -- ChangeTimeIncrement increment ->
+        --     model |> updateSettings (\x -> { x | timeIncrement = Maybe.withDefault defaultTimeIncrement (String.toInt increment) })
         FillTimeSlot conf ->
-            let
-                newDay =
-                    Array.set conf.slotIndex model.selectedTaskId conf.day
+            if not conf.isMouseDown then
+                model
 
-                newWeek =
-                    Array.set conf.dayIndex newDay model.week
-            in
-            { model | week = newWeek }
+            else
+                let
+                    newDay =
+                        case model.selectedTask of
+                            Nothing ->
+                                conf.day
+
+                            Just task ->
+                                Array.set conf.slotIndex (Just task.id) conf.day
+
+                    newWeek =
+                        Array.set conf.dayIndex newDay model.week
+                in
+                { model | week = newWeek }
 
         UpdateDropdownTimeIncrement dropdown ->
-            { model | dropdownTimeIncrement = dropdown }
+            { model | timeIncrementDropdown = dropdown }
+
+
+
+-- DECODERS
+
+
+type alias MouseOver =
+    { buttons : Int }
 
 
 
@@ -223,8 +227,8 @@ viewTask : Model -> Int -> Task -> Html Msg
 viewTask model index task =
     li
         [ class "task"
-        , class (ternary (model.selectedTaskId == Just task.id) "selected" "")
-        , onClick (ChangeSelection task.id)
+        , class (ternary (model.selectedTask == Just task) "selected" "")
+        , onClick (UpdateSelectedTask task)
         ]
         [ p
             [ class "index"
@@ -253,27 +257,32 @@ viewSlot conf =
             conf.model.tasks
                 |> List.filter (\t -> t.id == Maybe.withDefault -1 conf.slot)
                 |> List.head
-                |> Maybe.withDefault taskEmpty
+                |> Maybe.withDefault emptyTask
     in
     div
         [ class "stroke"
-        , class (ternary (isHour (getTimeString minute)) "zero" "")
-        , onMouseOver
-            (ternary conf.model.isMouseDown
-                (FillTimeSlot
-                    { slotIndex = conf.slotIndex
-                    , slot = conf.slot
-                    , dayIndex = conf.dayIndex
-                    , day = conf.day
-                    }
-                )
-                Default
-            )
+        , class (ternary (String.endsWith "00" (String.fromInt minute)) "zero" "")
+        , on "mouseover" (Decode.map FillTimeSlot (mouseDecoder { slotIndex = conf.slotIndex, slot = conf.slot, dayIndex = conf.dayIndex, day = conf.day }))
         ]
         [ div [ class "time" ] [ text (getTimeString minute) ]
         , div [ class "task", attribute "style" ("--clr: " ++ task.color) ]
             [ text task.name ]
         ]
+
+
+mouseDecoder : { slotIndex : Int, slot : Maybe Int, dayIndex : Int, day : Day } -> Decoder TimeSlotMessage
+mouseDecoder conf =
+    Decode.map (createMessage conf) (field "buttons" int)
+
+
+createMessage : { slotIndex : Int, slot : Maybe Int, dayIndex : Int, day : Day } -> Int -> TimeSlotMessage
+createMessage conf buttons =
+    case buttons of
+        1 ->
+            { isMouseDown = True, slotIndex = conf.slotIndex, slot = conf.slot, dayIndex = conf.dayIndex, day = conf.day }
+
+        _ ->
+            { isMouseDown = False, slotIndex = conf.slotIndex, slot = conf.slot, dayIndex = conf.dayIndex, day = conf.day }
 
 
 viewDay : Model -> Int -> Day -> Html Msg
@@ -316,10 +325,6 @@ viewDay model dayIndex day =
 
 viewSettings : Model -> Html Msg
 viewSettings model =
-    let
-        timeOptions =
-            [ "10", "15", "20", "30", "60" ]
-    in
     section
         [ class "section-settings" ]
         [ h2 [] [ text "Settings" ]
@@ -330,14 +335,14 @@ viewSettings model =
                     [ type_ "checkbox"
                     , checked model.settings.showWeekend
                     , onCheck
-                        (\checked -> ChangeShowWeekend checked)
+                        (\checked -> UpdateShowWeekend checked)
                     ]
                     []
                 , text "Show weekend"
                 ]
             , label [ class "dropdown-time" ]
                 [ text "Time increment"
-                , Dropdown.view model.dropdownTimeIncrement UpdateDropdownTimeIncrement
+                , Dropdown.view model.timeIncrementDropdown UpdateDropdownTimeIncrement
                 ]
             ]
         ]
@@ -346,9 +351,7 @@ viewSettings model =
 view : Model -> Html Msg
 view model =
     main_
-        [ onMouseDown (SetMouseDown True)
-        , onMouseUp (SetMouseDown False)
-        ]
+        []
         [ section
             [ class "section-tasks" ]
             [ h2 [] [ text "Tasks" ]
