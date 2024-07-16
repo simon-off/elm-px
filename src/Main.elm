@@ -9,6 +9,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (on, onCheck, onClick, onMouseDown, onMouseOver, onMouseUp)
 import Json.Decode as Decode exposing (Decoder, field, int)
 import Maybe exposing (withDefault)
+import Set exposing (Set)
 import Utils exposing (doIf, ternary)
 
 
@@ -84,12 +85,12 @@ type alias Week =
 
 
 type alias Model =
-    { selectedTask : Maybe Task
+    { isDrawing : Bool
+    , selectedTask : Maybe Task
     , tasks : List Task
     , settings : Settings
     , week : Week
     , timeIncrementDropdown : Dropdown.DropdownModel Int
-    , penis : Int
     }
 
 
@@ -126,7 +127,8 @@ defaultTimeIncrement =
 
 init : Model
 init =
-    { selectedTask = Nothing
+    { isDrawing = False
+    , selectedTask = Nothing
     , tasks = defaultTasks
     , settings =
         { showWeekend = True
@@ -144,16 +146,16 @@ init =
             , { value = 60, label = "60" }
             ]
         }
-    , penis = 0
     }
 
 
 type alias TimeSlotMessage =
-    { isMouseDown : Bool
+    { model : Model
     , slotIndex : Int
     , slot : Maybe Int
     , dayIndex : Int
     , day : Day
+    , startDrawing : Bool
     }
 
 
@@ -166,6 +168,7 @@ type Msg
     | UpdateShowWeekend Bool
     | UpdateDropdownTimeIncrement (Dropdown.DropdownModel Int)
     | FillTimeSlot TimeSlotMessage
+    | StopDrawing
 
 
 updateSettings : (Settings -> Settings) -> Model -> Model
@@ -186,37 +189,38 @@ update msg model =
                 (model |> updateSettings (\x -> { x | showWeekend = True }))
                 (model |> updateSettings (\x -> { x | showWeekend = False }))
 
-        -- ChangeTimeIncrement increment ->
-        --     model |> updateSettings (\x -> { x | timeIncrement = Maybe.withDefault defaultTimeIncrement (String.toInt increment) })
-        FillTimeSlot conf ->
-            if not conf.isMouseDown then
-                model
+        StopDrawing ->
+            { model | isDrawing = False }
 
-            else
+        FillTimeSlot conf ->
+            if model.isDrawing || conf.startDrawing then
                 let
                     newDay =
                         case model.selectedTask of
                             Nothing ->
-                                conf.day
+                                conf.day |> Array.set conf.slotIndex Nothing
 
                             Just task ->
-                                Array.set conf.slotIndex (Just task.id) conf.day
+                                conf.day |> Array.set conf.slotIndex (Just task.id)
 
                     newWeek =
                         Array.set conf.dayIndex newDay model.week
                 in
-                { model | week = newWeek }
+                { model
+                    | week = newWeek
+                    , isDrawing =
+                        if conf.startDrawing then
+                            True
+
+                        else
+                            model.isDrawing
+                }
+
+            else
+                model
 
         UpdateDropdownTimeIncrement dropdown ->
             { model | timeIncrementDropdown = dropdown }
-
-
-
--- DECODERS
-
-
-type alias MouseOver =
-    { buttons : Int }
 
 
 
@@ -250,6 +254,15 @@ viewSlot :
     -> Html Msg
 viewSlot conf =
     let
+        message =
+            { model = conf.model
+            , slotIndex = conf.slotIndex
+            , slot = conf.slot
+            , dayIndex = conf.dayIndex
+            , day = conf.day
+            , startDrawing = False
+            }
+
         minute =
             conf.slotIndex * 6
 
@@ -262,27 +275,13 @@ viewSlot conf =
     div
         [ class "stroke"
         , class (ternary (String.endsWith "00" (String.fromInt minute)) "zero" "")
-        , on "mouseover" (Decode.map FillTimeSlot (mouseDecoder { slotIndex = conf.slotIndex, slot = conf.slot, dayIndex = conf.dayIndex, day = conf.day }))
+        , onMouseDown (FillTimeSlot { message | startDrawing = True })
+        , onMouseOver (FillTimeSlot message)
         ]
         [ div [ class "time" ] [ text (getTimeString minute) ]
         , div [ class "task", attribute "style" ("--clr: " ++ task.color) ]
             [ text task.name ]
         ]
-
-
-mouseDecoder : { slotIndex : Int, slot : Maybe Int, dayIndex : Int, day : Day } -> Decoder TimeSlotMessage
-mouseDecoder conf =
-    Decode.map (createMessage conf) (field "buttons" int)
-
-
-createMessage : { slotIndex : Int, slot : Maybe Int, dayIndex : Int, day : Day } -> Int -> TimeSlotMessage
-createMessage conf buttons =
-    case buttons of
-        1 ->
-            { isMouseDown = True, slotIndex = conf.slotIndex, slot = conf.slot, dayIndex = conf.dayIndex, day = conf.day }
-
-        _ ->
-            { isMouseDown = False, slotIndex = conf.slotIndex, slot = conf.slot, dayIndex = conf.dayIndex, day = conf.day }
 
 
 viewDay : Model -> Int -> Day -> Html Msg
@@ -351,10 +350,10 @@ viewSettings model =
 view : Model -> Html Msg
 view model =
     main_
-        []
+        [ onMouseUp StopDrawing ]
         [ section
             [ class "section-tasks" ]
-            [ h2 [] [ text "Tasks" ]
+            [ h2 [] [ text (ternary model.isDrawing "JA" "NEJ") ]
             , ul
                 [ class "tasks" ]
                 ([ [ li [ class "task header" ]
